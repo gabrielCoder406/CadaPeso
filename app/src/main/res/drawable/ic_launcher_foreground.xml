@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ícono: una moneda con barras que crecen y un destello (la IA). Todo dentro del círculo
+     seguro de 66 dp para que ningún launcher lo recorte. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Borde de la moneda -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M54,29a25,25 0,1 1,0 50a25,25 0,1 1,0 -50z"
+        android:strokeWidth="4"
+        android:strokeColor="#FFFFFF" />
+    <!-- Barras crecientes -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M41,58h6v11h-6z M51,51h6v18h-6z M61,44h6v25h-6z" />
+    <!-- Destello -->
+    <path
+        android:fillColor="#FFD54F"
+        android:pathData="M71,27Q72,34 79,35Q72,36 71,43Q70,36 63,35Q70,34 71,27z" />
+</vector>

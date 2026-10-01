@@ -1,0 +1,7 @@
+# Fin de línea: en el repositorio todo se guarda normalizado (LF) y al descargarlo cada archivo
+# queda como lo necesita su sistema. gradlew es un script de Linux/macOS: con CRLF no corre.
+* text=auto
+gradlew text eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.jar binary

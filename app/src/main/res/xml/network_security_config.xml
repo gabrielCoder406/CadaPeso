@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ollama en tu PC habla HTTP sin cifrar (http://192.168.x.x:11434). Android lo bloquea
+     por defecto, así que lo permitimos. La descarga del modelo sigue yendo por HTTPS. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

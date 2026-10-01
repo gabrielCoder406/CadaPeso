@@ -1,0 +1,22 @@
+# Gradle / Android Studio
+.gradle/
+.kotlin/
+build/
+local.properties
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Firma del APK: guardala aparte (backup), nunca en git
+keystore.properties
+*.jks
+*.keystore
+
+# APKs generados
+release/
+
+# Modelos de IA (pesan GB)
+*.task
+*.litertlm

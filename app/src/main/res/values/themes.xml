@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compose dibuja toda la interfaz; este tema solo evita el "flash" blanco al abrir. -->
+    <style name="Theme.CadaPeso" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/fondo_claro</item>
+    </style>
+</resources>
