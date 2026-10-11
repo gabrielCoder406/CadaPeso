@@ -23,6 +23,10 @@ conectes tus cuentas de Mercado Pago o Galicia a través de tu propio servidor (
 
 ## Cómo generar el APK
 
+> **¿Solo querés instalarla?** Descargá el APK de la sección **Releases** de GitHub y seguí la
+> [guía de uso](GUIA.md). Cada cambio que se sube a GitHub se compila y se prueba solo
+> (`.github/workflows/apk.yml`).
+
 Requisitos (ya están en esta PC): JDK 21 y Android SDK (los mismos de App-Matematicas).
 
 1. Doble clic en **`compilar-apk.bat`**.
