@@ -1,0 +1,129 @@
+# Compila el APK de CadaPeso en GitHub, corre todos los tests y, al subir una etiqueta vX.Y.Z,
+# publica un Release con el APK para descargarlo desde el teléfono.
+#
+# Firma: para que el APK se pueda instalar ENCIMA de la versión que ya tenés (sin desinstalar),
+# tiene que estar firmado con tu misma clave (cadapeso-release.jks). Cargala una vez en
+# GitHub › Settings › Secrets and variables › Actions (ver GUIA.md, "Actualizar sin perder datos"):
+#   FIRMA_JKS_BASE64       el archivo cadapeso-release.jks en base64
+#   FIRMA_CLAVE            la storePassword de keystore.properties
+#   FIRMA_CLAVE_LLAVE      la keyPassword (opcional: si falta se usa FIRMA_CLAVE)
+#   FIRMA_ALIAS            el keyAlias (opcional: "cadapeso")
+# Sin esos secretos el APK se firma con una clave de prueba distinta en cada compilación.
+
+name: APK
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      FIRMA_JKS_BASE64: ${{ secrets.FIRMA_JKS_BASE64 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Firma con tu clave (si cargaste los secretos)
+        if: env.FIRMA_JKS_BASE64 != ''
+        env:
+          FIRMA_CLAVE: ${{ secrets.FIRMA_CLAVE }}
+          FIRMA_CLAVE_LLAVE: ${{ secrets.FIRMA_CLAVE_LLAVE }}
+          FIRMA_ALIAS: ${{ secrets.FIRMA_ALIAS }}
+        run: |
+          echo "$FIRMA_JKS_BASE64" | base64 --decode > cadapeso-release.jks
+          {
+            echo "storeFile=cadapeso-release.jks"
+            echo "storePassword=$FIRMA_CLAVE"
+            echo "keyAlias=${FIRMA_ALIAS:-cadapeso}"
+            echo "keyPassword=${FIRMA_CLAVE_LLAVE:-$FIRMA_CLAVE}"
+          } > keystore.properties
+
+      - name: Compilar el APK
+        run: ./gradlew assembleRelease --console=plain
+
+      - name: Nombre del APK
+        id: apk
+        run: |
+          version=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts)
+          mkdir -p release
+          cp app/build/outputs/apk/release/app-release.apk "release/CadaPeso-$version.apk"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "archivo=release/CadaPeso-$version.apk" >> "$GITHUB_OUTPUT"
+          if [ -f keystore.properties ]; then echo "firma=tu clave" >> "$GITHUB_OUTPUT"; else echo "firma=clave de prueba" >> "$GITHUB_OUTPUT"; fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CadaPeso-${{ steps.apk.outputs.version }}
+          path: ${{ steps.apk.outputs.archivo }}
+
+      - name: Tests de la app (motor, integraciones, migración y recorrido con Robolectric)
+        run: ./gradlew testDebugUnitTest --console=plain
+
+      - name: Resultados de los tests (si fallan)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: informe-tests
+          path: app/build/reports/tests/
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Tests del servidor
+        working-directory: servidor
+        run: npm test
+
+      - name: Publicar el Release con el APK
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ETIQUETA: ${{ github.ref_name }}
+          ARCHIVO: ${{ steps.apk.outputs.archivo }}
+          FIRMA: ${{ steps.apk.outputs.firma }}
+        run: |
+          {
+            echo "## CadaPeso $ETIQUETA"
+            echo
+            echo "Descargá **$(basename "$ARCHIVO")** desde el teléfono y abrilo para instalarlo."
+            echo "La guía de uso está en [GUIA.md](https://github.com/$GITHUB_REPOSITORY/blob/$ETIQUETA/GUIA.md)."
+            echo
+            if [ "$FIRMA" = "tu clave" ]; then
+              echo "Firmado con tu clave: se instala encima de la versión anterior sin perder datos."
+            else
+              echo "⚠️ Firmado con una clave de prueba: si ya tenés CadaPeso instalado, Android no lo deja"
+              echo "instalar encima. Antes hacé un respaldo (Ajustes › Tus datos › Exportar respaldo),"
+              echo "desinstalá, instalá este APK y restaurá el respaldo. Ver GUIA.md, \"Actualizar sin perder datos\"."
+            fi
+            echo
+            echo "### Novedades"
+            echo "- Cuentas conectadas: Mercado Pago (API oficial con OAuth 2.0 y webhooks) y Banco Galicia (vía Prometeo)."
+            echo "- Lectura de los avisos de las apps de Galicia y Mercado Pago, sin servidor."
+            echo "- Bandeja de revisión con categoría sugerida, duplicados, transferencias entre tus cuentas y devoluciones."
+            echo "- Saldos de las cuentas conectadas en Patrimonio."
+          } > notas.md
+          if gh release view "$ETIQUETA" > /dev/null 2>&1; then
+            gh release edit "$ETIQUETA" --notes-file notas.md --title "CadaPeso $ETIQUETA"
+            gh release upload "$ETIQUETA" "$ARCHIVO" --clobber
+          else
+            gh release create "$ETIQUETA" "$ARCHIVO" --title "CadaPeso $ETIQUETA" --notes-file notas.md
+          fi
