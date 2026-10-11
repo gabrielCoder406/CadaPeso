@@ -109,9 +109,12 @@ class RecorridoAppTest {
         compose.waitForIdle()
     }
 
-    /** Baja en la lista (LazyColumn) hasta que aparezca el texto. */
-    private fun bajarHasta(texto: String) {
-        compose.onAllNodes(hasScrollToNodeAction()).onFirst().performScrollToNode(hasText(texto, substring = true))
+    /**
+     * Baja en la lista (LazyColumn) hasta que aparezca el texto. Con [substring] = false busca el
+     * texto exacto: así "Supermercado" no se confunde con un consejo que lo menciona.
+     */
+    private fun bajarHasta(texto: String, substring: Boolean = true) {
+        compose.onAllNodes(hasScrollToNodeAction()).onFirst().performScrollToNode(hasText(texto, substring = substring))
         compose.waitForIdle()
     }
 
@@ -163,7 +166,9 @@ class RecorridoAppTest {
         // ---- Asignar presupuesto a una categoría ("cada peso con una tarea") ----
         clic("Presupuesto")
         esperarTexto("Cada peso con una tarea")
-        bajarHasta("Supermercado")
+        // Según la fecha, arriba puede aparecer el "plan de ajuste", que nombra al supermercado en
+        // un consejo: se busca la fila de la categoría por su texto exacto.
+        bajarHasta("Supermercado", substring = false)
         clic("Supermercado")
         esperarTexto("🛒 Supermercado")
         compose.onNodeWithText("Monto").performTextClearance()
