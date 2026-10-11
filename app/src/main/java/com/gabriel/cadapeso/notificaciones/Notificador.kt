@@ -13,6 +13,8 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.gabriel.cadapeso.MainActivity
 import com.gabriel.cadapeso.R
+import com.gabriel.cadapeso.datos.Repositorio
+import com.gabriel.cadapeso.dominio.Formato
 
 /** Crea los canales de notificación y muestra avisos que, al tocarlos, abren la pantalla indicada. */
 object Notificador {
@@ -25,6 +27,13 @@ object Notificador {
     const val DESTINO_AHORRO = "ahorro"
     const val DESTINO_SEMANA = "semana"
     const val DESTINO_INICIO = "inicio"
+    const val DESTINO_DETECTADOS = "detectados"
+    const val DESTINO_CONEXIONES = "conexiones"
+    /** Al volver del navegador después de autorizar Mercado Pago (deep link cadapeso://conexion). */
+    const val DESTINO_VINCULADO = "vinculado"
+    const val DESTINO_VINCULACION_FALLIDA = "vinculacion_fallida"
+
+    private const val ID_DETECTADOS = 4
 
     fun crearCanales(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
@@ -43,6 +52,20 @@ object Notificador {
     fun permisoConcedido(context: Context): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+
+    /** Un solo aviso (que se actualiza) con lo que espera revisión en la bandeja de cuentas conectadas. */
+    suspend fun avisarDetectados(context: Context, repo: Repositorio) {
+        val pendientes = repo.detectadosPendientesAhora()
+        if (pendientes.isEmpty()) return
+        val moneda = repo.obtenerPerfil().moneda
+        val texto = if (pendientes.size == 1) {
+            val d = pendientes.first()
+            "${d.origen.etiqueta}: ${d.descripcion} por ${Formato.dinero(d.monto, moneda)}. Tocá para revisarlo."
+        } else {
+            "${pendientes.size} movimientos de tus cuentas esperan que los revises."
+        }
+        mostrar(context, ID_DETECTADOS, CANAL_ALERTAS, "Movimientos para revisar", texto, DESTINO_DETECTADOS)
+    }
 
     fun mostrar(context: Context, id: Int, canal: String, titulo: String, texto: String, destino: String) {
         if (!permisoConcedido(context)) return

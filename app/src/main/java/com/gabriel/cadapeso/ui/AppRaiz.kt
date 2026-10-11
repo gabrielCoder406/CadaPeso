@@ -39,11 +39,14 @@ import com.gabriel.cadapeso.Contenedor
 import com.gabriel.cadapeso.datos.ConfigIA
 import com.gabriel.cadapeso.datos.Perfil
 import com.gabriel.cadapeso.dominio.Analisis
+import com.gabriel.cadapeso.integraciones.Conciliador
 import com.gabriel.cadapeso.notificaciones.Notificador
 import com.gabriel.cadapeso.ui.componentes.Iconos
 import com.gabriel.cadapeso.ui.pantallas.AjustesPantalla
 import com.gabriel.cadapeso.ui.pantallas.AsesorPantalla
+import com.gabriel.cadapeso.ui.pantallas.BandejaPantalla
 import com.gabriel.cadapeso.ui.pantallas.BienvenidaPantalla
+import com.gabriel.cadapeso.ui.pantallas.ConexionesPantalla
 import com.gabriel.cadapeso.ui.pantallas.EditorMovimiento
 import com.gabriel.cadapeso.ui.pantallas.EvaluarCompraDialogo
 import com.gabriel.cadapeso.ui.pantallas.InicioPantalla
@@ -51,6 +54,7 @@ import com.gabriel.cadapeso.ui.pantallas.MovimientosPantalla
 import com.gabriel.cadapeso.ui.pantallas.PatrimonioPantalla
 import com.gabriel.cadapeso.ui.pantallas.PresupuestoPantalla
 import com.gabriel.cadapeso.ui.pantallas.TestPerfilPantalla
+import kotlinx.coroutines.flow.merge
 
 private fun Seccion.icono(): ImageVector = when (this) {
     Seccion.INICIO -> Icons.Filled.Home
@@ -68,6 +72,7 @@ private fun Seccion.icono(): ImageVector = when (this) {
 fun AppRaiz(contenedor: Contenedor, destino: String?, onDestinoConsumido: () -> Unit) {
     val vm: AppViewModel = viewModel { AppViewModel(contenedor) }
     val asesor: AsesorViewModel = viewModel { AsesorViewModel(contenedor) }
+    val conexiones: ConexionesViewModel = viewModel { ConexionesViewModel(contenedor) }
     val perfil by vm.perfil.collectAsStateWithLifecycle()
     val analisis by vm.analisis.collectAsStateWithLifecycle()
     val config by vm.configIA.collectAsStateWithLifecycle()
@@ -77,32 +82,40 @@ fun AppRaiz(contenedor: Contenedor, destino: String?, onDestinoConsumido: () -> 
     // Al volver a la app se actualiza "hoy" (por si cambió el día) y los vencimientos.
     LifecycleResumeEffect(Unit) {
         vm.actualizarReloj()
+        conexiones.sincronizarSiHaceFalta() // trae lo nuevo de las cuentas conectadas, si hace rato que no
         onPauseOrDispose { }
     }
     LaunchedEffect(Unit) {
-        vm.avisos.collect { aviso ->
+        merge(vm.avisos, conexiones.avisos).collect { aviso ->
             val resultado = avisos.showSnackbar(aviso.texto, aviso.accion, withDismissAction = aviso.accion == null, duration = SnackbarDuration.Short)
             if (resultado == SnackbarResult.ActionPerformed) aviso.alAccionar?.invoke()
         }
     }
     LaunchedEffect(destino) {
         if (destino != null) {
+            when (destino) {
+                Notificador.DESTINO_VINCULADO -> conexiones.alVolverDeMercadoPago(ok = true)
+                Notificador.DESTINO_VINCULACION_FALLIDA -> conexiones.alVolverDeMercadoPago(ok = false)
+            }
             nav.irADestino(destino)
             onDestinoConsumido()
         }
     }
 
-    CompositionLocalProvider(LocalAvisos provides avisos) { Contenido(perfil, analisis, config, vm, asesor, nav) }
+    CompositionLocalProvider(LocalAvisos provides avisos) { Contenido(perfil, analisis, config, vm, asesor, conexiones, nav) }
 }
 
 /** Lo que se ve: carga, bienvenida o la app con su barra inferior, más el editor y los formularios. */
 @Composable
-private fun Contenido(p: Perfil?, a: Analisis?, config: ConfigIA, vm: AppViewModel, asesor: AsesorViewModel, nav: Navegacion) {
+private fun Contenido(
+    p: Perfil?, a: Analisis?, config: ConfigIA, vm: AppViewModel, asesor: AsesorViewModel, conexiones: ConexionesViewModel, nav: Navegacion,
+) {
     when {
         p == null || (p.onboardingCompleto && a == null) -> Cargando()
         !p.onboardingCompleto -> BienvenidaPantalla(p, vm)
         a != null -> {
             PedirPermisoNotificaciones()
+            val pendientes by conexiones.pendientes.collectAsStateWithLifecycle()
             val superpuesta = nav.superpuesta
             BackHandler(enabled = superpuesta != null) { nav.superpuesta = null }
             BackHandler(enabled = superpuesta == null && nav.seccion != Seccion.INICIO) { nav.seccion = Seccion.INICIO }
@@ -111,6 +124,22 @@ private fun Contenido(p: Perfil?, a: Analisis?, config: ConfigIA, vm: AppViewMod
                     a, p, config, vm, asesor,
                     onVolver = { nav.superpuesta = null },
                     onTest = { nav.superpuesta = Superpuesta.Test(it) },
+                    onConexiones = { nav.superpuesta = Superpuesta.Conexiones },
+                )
+                Superpuesta.Conexiones -> ConexionesPantalla(
+                    a, conexiones,
+                    onBandeja = { nav.superpuesta = Superpuesta.Detectados },
+                    onVolver = { nav.superpuesta = null },
+                )
+                Superpuesta.Detectados -> BandejaPantalla(
+                    a, conexiones,
+                    onEditar = { d, categoriaId ->
+                        Conciliador.aMovimiento(d, a.datos.categorias, categoriaId)?.let {
+                            nav.edicion = EdicionMovimiento(borrador = it, detectadoId = d.id)
+                        }
+                    },
+                    onConexiones = { nav.superpuesta = Superpuesta.Conexiones },
+                    onVolver = { nav.superpuesta = null },
                 )
                 is Superpuesta.Test -> TestPerfilPantalla(superpuesta.tipo, vm) { nav.superpuesta = null }
                 null -> Scaffold(
@@ -130,8 +159,8 @@ private fun Contenido(p: Perfil?, a: Analisis?, config: ConfigIA, vm: AppViewMod
                     // consumeWindowInsets: así el teclado no deja un hueco del alto de la barra inferior.
                     Box(Modifier.padding(relleno).consumeWindowInsets(relleno)) {
                         when (nav.seccion) {
-                            Seccion.INICIO -> InicioPantalla(a, nav, onCargarEjemplo = vm::cargarDatosEjemplo)
-                            Seccion.MOVIMIENTOS -> MovimientosPantalla(a, nav)
+                            Seccion.INICIO -> InicioPantalla(a, nav, onCargarEjemplo = vm::cargarDatosEjemplo, pendientes = pendientes.size)
+                            Seccion.MOVIMIENTOS -> MovimientosPantalla(a, nav, pendientes = pendientes.size)
                             Seccion.PRESUPUESTO -> PresupuestoPantalla(a, nav, vm)
                             Seccion.PATRIMONIO -> PatrimonioPantalla(a, nav, vm)
                             Seccion.ASESOR -> AsesorPantalla(a, nav, vm, asesor, config)
@@ -147,7 +176,8 @@ private fun Contenido(p: Perfil?, a: Analisis?, config: ConfigIA, vm: AppViewMod
                     iaDisponible = asesor.iaConfigurada(config),
                     onInterpretarIA = { texto -> asesor.interpretarConIA(texto, a, config) },
                     onGuardar = { m, sugerida ->
-                        vm.guardarMovimiento(m, sugerida)
+                        val detectado = edicion.detectadoId
+                        if (detectado != null) conexiones.aceptarEditado(detectado, m, sugerida) else vm.guardarMovimiento(m, sugerida)
                         nav.edicion = null
                     },
                     onBorrar = { m ->

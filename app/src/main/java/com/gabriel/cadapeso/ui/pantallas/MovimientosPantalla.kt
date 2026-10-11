@@ -46,14 +46,18 @@ import com.gabriel.cadapeso.datos.Movimiento
 import com.gabriel.cadapeso.dominio.Analisis
 import com.gabriel.cadapeso.dominio.Formato
 import com.gabriel.cadapeso.dominio.MotorPresupuesto
+import com.gabriel.cadapeso.dominio.OrigenMovimiento
 import com.gabriel.cadapeso.dominio.TipoMovimiento
 import com.gabriel.cadapeso.dominio.contiene
 import com.gabriel.cadapeso.dominio.normalizar
+import com.gabriel.cadapeso.dominio.plural
 import com.gabriel.cadapeso.ui.LocalAvisos
 import com.gabriel.cadapeso.ui.EdicionMovimiento
 import com.gabriel.cadapeso.ui.Navegacion
+import com.gabriel.cadapeso.ui.Superpuesta
 import com.gabriel.cadapeso.ui.componentes.AvatarCategoria
 import com.gabriel.cadapeso.ui.componentes.EstadoVacio
+import com.gabriel.cadapeso.ui.componentes.Seccion
 import com.gabriel.cadapeso.ui.componentes.SelectorCategoriaDialogo
 import com.gabriel.cadapeso.ui.componentes.SelectorMes
 import com.gabriel.cadapeso.ui.tema.ColoresApp
@@ -61,7 +65,7 @@ import com.gabriel.cadapeso.ui.tema.EstiloMonto
 import java.time.YearMonth
 
 @Composable
-fun MovimientosPantalla(a: Analisis, nav: Navegacion) {
+fun MovimientosPantalla(a: Analisis, nav: Navegacion, pendientes: Int = 0) {
     var mes by rememberSaveable { mutableStateOf(YearMonth.from(a.hoy)) }
     var filtro by rememberSaveable { mutableStateOf(0) } // 0 = todos, 1 = gastos, 2 = ingresos
     var busqueda by rememberSaveable { mutableStateOf("") }
@@ -105,6 +109,15 @@ fun MovimientosPantalla(a: Analisis, nav: Navegacion) {
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             item { SelectorMes(mes, { mes = it }) }
+            if (pendientes > 0) {
+                item {
+                    Seccion(
+                        "📥 ${plural(pendientes, "movimiento detectado", "movimientos detectados")}",
+                        subtitulo = "De Mercado Pago o Galicia: revisalos para que se sumen",
+                        onClick = { nav.superpuesta = Superpuesta.Detectados },
+                    ) {}
+                }
+            }
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     CajaResumen("Ingresos", Formato.dinero(resumen.ingresos, moneda), ColoresApp.positivo, Modifier.weight(1f))
@@ -197,7 +210,8 @@ fun FilaMovimiento(m: Movimiento, categoria: Categoria?, moneda: String, onClick
                 style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
             Text(
-                "${categoria?.nombre ?: "Sin categoría"} · ${m.medioPago.etiqueta}",
+                "${categoria?.nombre ?: "Sin categoría"} · ${m.medioPago.etiqueta}" +
+                    if (m.origen != OrigenMovimiento.MANUAL) " · ${m.origen.etiqueta}" else "",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
             )
         }

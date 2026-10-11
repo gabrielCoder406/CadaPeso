@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">CadaPeso</string>
+    <!-- Nombre que muestra Android en "Acceso a notificaciones". -->
+    <string name="oyente_notificaciones">CadaPeso: avisos de Galicia y Mercado Pago</string>
 </resources>

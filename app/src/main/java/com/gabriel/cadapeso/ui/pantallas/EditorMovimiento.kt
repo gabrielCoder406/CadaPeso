@@ -63,6 +63,7 @@ import com.gabriel.cadapeso.dominio.Formato
 import com.gabriel.cadapeso.dominio.GrupoGasto
 import com.gabriel.cadapeso.dominio.MedioPago
 import com.gabriel.cadapeso.dominio.MovimientoInterpretado
+import com.gabriel.cadapeso.dominio.OrigenMovimiento
 import com.gabriel.cadapeso.dominio.ParserMovimiento
 import com.gabriel.cadapeso.dominio.TipoMovimiento
 import com.gabriel.cadapeso.dominio.leerNumero
@@ -113,7 +114,7 @@ fun EditorMovimiento(
     var categoriaSugerida by remember { mutableStateOf(base?.categoriaId) }
     var fecha by remember { mutableStateOf(base?.fecha ?: a.hoy) }
     var medio by remember { mutableStateOf(base?.medioPago ?: medioHabitual) }
-    var nota by remember { mutableStateOf(original?.nota ?: "") }
+    var nota by remember { mutableStateOf(base?.nota ?: "") }
     var metaId by remember { mutableStateOf(original?.metaId) }
     var deudaId by remember { mutableStateOf(original?.deudaId) }
     var conIA by remember { mutableStateOf(original?.creadoConIA ?: false) }
@@ -338,6 +339,8 @@ fun EditorMovimiento(
                             metaId = if (c.grupo == GrupoGasto.AHORRO) metaId else null,
                             deudaId = if (c.grupo == GrupoGasto.DEUDA) deudaId else null,
                             creadoConIA = conIA,
+                            // Un movimiento importado de Mercado Pago o Galicia sigue siéndolo aunque lo edites.
+                            origen = base?.origen ?: OrigenMovimiento.MANUAL,
                         )
                         onGuardar(movimiento, categoriaSugerida)
                     },

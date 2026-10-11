@@ -5,6 +5,7 @@ import com.gabriel.cadapeso.dominio.EstadoCompra
 import com.gabriel.cadapeso.dominio.FrecuenciaAhorro
 import com.gabriel.cadapeso.dominio.GrupoGasto
 import com.gabriel.cadapeso.dominio.MedioPago
+import com.gabriel.cadapeso.dominio.OrigenMovimiento
 import com.gabriel.cadapeso.dominio.ReglaPresupuesto
 import com.gabriel.cadapeso.dominio.TipoActivo
 import com.gabriel.cadapeso.dominio.TipoDeuda
@@ -39,7 +40,7 @@ object Respaldo {
             JSONObject().put("id", m.id).put("fecha", m.fecha.toString()).put("monto", m.monto).put("tipo", m.tipo.name)
                 .put("categoriaId", m.categoriaId).put("descripcion", m.descripcion).put("medioPago", m.medioPago.name)
                 .put("nota", m.nota).put("metaId", m.metaId ?: JSONObject.NULL).put("deudaId", m.deudaId ?: JSONObject.NULL)
-                .put("creadoConIA", m.creadoConIA)
+                .put("creadoConIA", m.creadoConIA).put("origen", m.origen.name)
         }))
         raiz.put("asignaciones", JSONArray(d.asignaciones.map { JSONObject().put("mes", it.mes).put("categoriaId", it.categoriaId).put("monto", it.monto) }))
         raiz.put("planes", JSONArray(d.planes.map { JSONObject().put("mes", it.mes).put("ingresoPrevisto", it.ingresoPrevisto) }))
@@ -107,7 +108,7 @@ object Respaldo {
                     tipo = enumDe(o.optString("tipo"), TipoMovimiento.GASTO), categoriaId = o.getLong("categoriaId"),
                     descripcion = o.optString("descripcion"), medioPago = enumDe(o.optString("medioPago"), MedioPago.DEBITO),
                     nota = o.optString("nota"), metaId = o.longONull("metaId"), deudaId = o.longONull("deudaId"),
-                    creadoConIA = o.optBoolean("creadoConIA"),
+                    creadoConIA = o.optBoolean("creadoConIA"), origen = enumDe(o.optString("origen"), OrigenMovimiento.MANUAL),
                 )
             },
             asignaciones = raiz.lista("asignaciones") { o -> Asignacion(o.getInt("mes"), o.getLong("categoriaId"), o.getDouble("monto")) },
@@ -158,7 +159,7 @@ object Respaldo {
     /** Movimientos en CSV con punto y coma y coma decimal (lo que espera Excel en español). */
     fun csvMovimientos(d: DatosFinancieros): String {
         val sb = StringBuilder("﻿") // BOM: Excel reconoce los acentos
-        sb.append("Fecha;Tipo;Monto;Categoría;Grupo;Descripción;Medio de pago;Nota\n")
+        sb.append("Fecha;Tipo;Monto;Categoría;Grupo;Descripción;Medio de pago;Nota;Origen\n")
         for (m in d.movimientos.sortedBy { it.fecha }) {
             val c = d.categoria(m.categoriaId)
             sb.append(m.fecha).append(';')
@@ -168,7 +169,8 @@ object Respaldo {
                 .append(csv(c?.grupo?.etiqueta ?: "")).append(';')
                 .append(csv(m.descripcion)).append(';')
                 .append(m.medioPago.etiqueta).append(';')
-                .append(csv(m.nota)).append('\n')
+                .append(csv(m.nota)).append(';')
+                .append(m.origen.etiqueta).append('\n')
         }
         return sb.toString()
     }

@@ -1,20 +1,33 @@
 package com.gabriel.cadapeso.datos
 
 import androidx.room.withTransaction
+import com.gabriel.cadapeso.dominio.CanalDeteccion
 import com.gabriel.cadapeso.dominio.Categorizador
 import com.gabriel.cadapeso.dominio.DatosFinancieros
 import com.gabriel.cadapeso.dominio.EstadoCompra
+import com.gabriel.cadapeso.dominio.EstadoDetectado
 import com.gabriel.cadapeso.dominio.GrupoGasto
 import com.gabriel.cadapeso.dominio.MedioPago
 import com.gabriel.cadapeso.dominio.MotorPresupuesto
+import com.gabriel.cadapeso.dominio.TipoActivo
 import com.gabriel.cadapeso.dominio.TipoMovimiento
+import com.gabriel.cadapeso.dominio.TransaccionExterna
 import com.gabriel.cadapeso.dominio.clave
+import com.gabriel.cadapeso.integraciones.AccionImportacion
+import com.gabriel.cadapeso.integraciones.Conciliador
+import com.gabriel.cadapeso.integraciones.ContextoImportacion
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import java.time.LocalDate
 import java.time.YearMonth
 import kotlin.math.max
+
+/** Resultado de importar un lote de transacciones de las cuentas conectadas. */
+data class ResumenImportacion(val pendientes: Int = 0, val aceptados: Int = 0, val actualizados: Int = 0) {
+    operator fun plus(otro: ResumenImportacion) =
+        ResumenImportacion(pendientes + otro.pendientes, aceptados + otro.aceptados, actualizados + otro.actualizados)
+}
 
 /**
  * Única puerta de entrada a la base de datos. Las pantallas nunca hablan con Room directo:
@@ -26,6 +39,9 @@ class Repositorio(private val db: BaseDatos) {
     val perfil: Flow<Perfil> = db.perfil().observar().map { it ?: Perfil() }
     val configIA: Flow<ConfigIA> = db.configIA().observar().map { it ?: ConfigIA() }
     val chat: Flow<List<MensajeChat>> = db.chat().observar()
+
+    /** Movimientos de las cuentas conectadas que esperan revisión. */
+    val detectadosPendientes: Flow<List<MovimientoDetectado>> = db.detectados().observarPendientes()
 
     private data class Parte1(
         val movimientos: List<Movimiento>, val categorias: List<Categoria>, val asignaciones: List<Asignacion>,
@@ -233,6 +249,119 @@ class Repositorio(private val db: BaseDatos) {
     suspend fun agregarMensaje(m: MensajeChat) = db.chat().insertar(m)
     suspend fun borrarChat() = db.chat().borrarTodo()
 
+    // ------------------------------------------------------------------ Cuentas conectadas (bandeja de revisión)
+
+    /**
+     * Importa transacciones del esquema unificado (de la API, de Prometeo o de una notificación).
+     * Todo entra a la bandeja; si [aceptarSolas] está activo, lo que llegó de la cuenta conectada
+     * y no tiene nada raro se convierte directamente en movimiento. El Conciliador decide; acá
+     * solo se ejecuta, todo dentro de una transacción.
+     */
+    suspend fun importarTransacciones(
+        lista: List<TransaccionExterna>,
+        canal: CanalDeteccion,
+        aceptarSolas: Boolean,
+        ahoraMillis: Long = System.currentTimeMillis(),
+    ): ResumenImportacion {
+        if (lista.isEmpty()) return ResumenImportacion()
+        return db.withTransaction {
+            val desde = lista.minOf { it.fecha }.minusDays(3)
+            val categorias = db.categorias().todas()
+            var ctx = ContextoImportacion(categorias, db.detectados().desde(desde), db.movimientos().desde(desde))
+            var pendientes = 0
+            var aceptados = 0
+            var actualizados = 0
+            for (t in lista) {
+                when (val accion = Conciliador.decidir(t, canal, db.detectados().porIdExterno(t.idTransaccion), ctx, ahoraMillis)) {
+                    AccionImportacion.Ignorar -> Unit
+                    is AccionImportacion.Insertar -> {
+                        var d = accion.detectado.copy(id = db.detectados().insertar(accion.detectado))
+                        if (aceptarSolas && Conciliador.aceptableSinRevision(d)) {
+                            d = aceptarDentro(d, categorias, d.categoriaId)
+                            aceptados++
+                        } else if (d.estado == EstadoDetectado.PENDIENTE) {
+                            pendientes++
+                        }
+                        ctx = ctx.copy(recientes = ctx.recientes + d)
+                    }
+                    is AccionImportacion.Actualizar -> {
+                        db.detectados().actualizar(accion.detectado)
+                        actualizados++
+                        ctx = ctx.copy(recientes = ctx.recientes.map { if (it.id == accion.detectado.id) accion.detectado else it })
+                    }
+                }
+            }
+            // Los resueltos se recuerdan más de un año (para no volver a importarlos) y después se borran.
+            db.detectados().purgarResueltos(ahoraMillis - 400L * 86_400_000L)
+            ResumenImportacion(pendientes, aceptados, actualizados)
+        }
+    }
+
+    suspend fun detectadosPendientesAhora(): List<MovimientoDetectado> = db.detectados().pendientes()
+
+    /** Crea el movimiento y marca el detectado como aceptado. Aprende la categoría si la cambiaste. */
+    private suspend fun aceptarDentro(d: MovimientoDetectado, categorias: List<Categoria>, categoriaId: Long?): MovimientoDetectado {
+        val m = Conciliador.aMovimiento(d, categorias, categoriaId) ?: throw IllegalStateException("No hay una categoría para este movimiento")
+        val id = guardarMovimiento(m, categoriaSugerida = d.categoriaId)
+        return d.copy(estado = EstadoDetectado.ACEPTADO, movimientoId = id, categoriaId = m.categoriaId).also { db.detectados().actualizar(it) }
+    }
+
+    suspend fun aceptarDetectado(id: Long, categoriaId: Long?) = db.withTransaction<Unit> {
+        val d = db.detectados().obtener(id)?.takeIf { it.estado == EstadoDetectado.PENDIENTE } ?: return@withTransaction
+        aceptarDentro(d, db.categorias().todas(), categoriaId)
+    }
+
+    /** Aceptado después de editarlo en el editor de movimientos. */
+    suspend fun aceptarDetectadoEditado(id: Long, m: Movimiento, categoriaSugerida: Long?) = db.withTransaction<Unit> {
+        val d = db.detectados().obtener(id)?.takeIf { it.estado == EstadoDetectado.PENDIENTE } ?: return@withTransaction
+        val movimientoId = guardarMovimiento(m.copy(origen = d.origen), categoriaSugerida)
+        db.detectados().actualizar(d.copy(estado = EstadoDetectado.ACEPTADO, movimientoId = movimientoId, categoriaId = m.categoriaId))
+    }
+
+    /** "Es el mismo que cargué a mano": no se crea nada, se vincula con ese movimiento. */
+    suspend fun vincularDetectadoConExistente(id: Long) = db.withTransaction<Unit> {
+        val d = db.detectados().obtener(id) ?: return@withTransaction
+        val existente = d.duplicadoDeId ?: return@withTransaction
+        db.detectados().actualizar(d.copy(estado = EstadoDetectado.ACEPTADO, movimientoId = existente))
+    }
+
+    suspend fun descartarDetectado(id: Long) {
+        val d = db.detectados().obtener(id) ?: return
+        db.detectados().actualizar(d.copy(estado = EstadoDetectado.DESCARTADO))
+    }
+
+    /** Deshacer un descarte. */
+    suspend fun restaurarDetectado(id: Long) {
+        val d = db.detectados().obtener(id) ?: return
+        if (d.estado == EstadoDetectado.DESCARTADO) db.detectados().actualizar(d.copy(estado = EstadoDetectado.PENDIENTE))
+    }
+
+    /**
+     * Acepta de una vez todos los pendientes que no necesitan una decisión tuya (los que parecen
+     * transferencias propias o duplicados quedan en la bandeja). Devuelve cuántos aceptó.
+     */
+    suspend fun aceptarTodosLosDetectados(): Int = db.withTransaction {
+        val categorias = db.categorias().todas()
+        db.detectados().pendientes()
+            .filter { !it.transferenciaPropia && it.duplicadoDeId == null }
+            .onEach { aceptarDentro(it, categorias, it.categoriaId) }
+            .size
+    }
+
+    /**
+     * Refleja el saldo de una cuenta conectada en un activo de Patrimonio (tipo "Cuenta o
+     * billetera"). Con [activoId] null lo crea. Devuelve el id, o null si borraste ese activo
+     * (en ese caso no se vuelve a crear).
+     */
+    suspend fun reflejarSaldo(activoId: Long?, nombre: String, monto: Double, hoy: LocalDate): Long? {
+        if (activoId == null) {
+            return db.activos().insertar(Activo(nombre = nombre, tipo = TipoActivo.CUENTA, valor = monto, liquido = true, actualizado = hoy))
+        }
+        val activo = db.activos().obtener(activoId) ?: return null
+        if (activo.valor != monto) db.activos().actualizar(activo.copy(valor = monto, actualizado = hoy))
+        return activoId
+    }
+
     // ------------------------------------------------------------------ Datos de ejemplo / borrado / respaldo
 
     suspend fun cargarDatosEjemplo(hoy: LocalDate) = db.withTransaction {
@@ -264,6 +393,7 @@ class Repositorio(private val db: BaseDatos) {
         db.compras().borrarTodo()
         db.eventos().borrarTodo()
         db.chat().borrarTodo()
+        db.detectados().borrarTodo()
         db.categorias().borrarTodo()
         db.categorias().insertarTodos(CategoriasBase.lista())
     }

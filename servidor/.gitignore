@@ -1,0 +1,7 @@
+# Secretos y base de datos: nunca a git
+.env
+datos/
+*.db
+*.db-shm
+*.db-wal
+node_modules/

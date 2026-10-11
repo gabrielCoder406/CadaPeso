@@ -29,14 +29,24 @@ val LocalAvisos = staticCompositionLocalOf { SnackbarHostState() }
 /** Pantallas que se abren encima de las secciones (con botón "atrás"). */
 sealed interface Superpuesta {
     data object Ajustes : Superpuesta
+    /** Cuentas conectadas: servidor, Mercado Pago, Galicia y notificaciones. */
+    data object Conexiones : Superpuesta
+    /** Bandeja de movimientos detectados que esperan revisión. */
+    data object Detectados : Superpuesta
     data class Test(val tipo: TipoTest) : Superpuesta
 }
 
 /**
  * Qué movimiento se está editando (null = uno nuevo), el texto con el que arranca y, para uno
  * nuevo, valores precargados opcionales (por ejemplo, al "comprar igual" desde la regla de 24 h).
+ * [detectadoId]: el borrador viene de la bandeja de cuentas conectadas; al guardarlo se acepta.
  */
-data class EdicionMovimiento(val movimiento: Movimiento? = null, val texto: String = "", val borrador: Movimiento? = null)
+data class EdicionMovimiento(
+    val movimiento: Movimiento? = null,
+    val texto: String = "",
+    val borrador: Movimiento? = null,
+    val detectadoId: Long? = null,
+)
 
 /** Borrador de una compra que se va a evaluar con la regla de las 24/48 horas. */
 data class BorradorCompra(val descripcion: String = "", val monto: Double? = null, val categoriaId: Long? = null)
@@ -77,6 +87,9 @@ class Navegacion {
             Notificador.DESTINO_COMPRAS -> ir(AccionConsejo.VER_COMPRAS)
             Notificador.DESTINO_AHORRO -> ir(AccionConsejo.VER_AHORRO)
             Notificador.DESTINO_SEMANA -> ir(AccionConsejo.VER_SEMANA)
+            Notificador.DESTINO_DETECTADOS -> superpuesta = Superpuesta.Detectados
+            Notificador.DESTINO_CONEXIONES, Notificador.DESTINO_VINCULADO, Notificador.DESTINO_VINCULACION_FALLIDA ->
+                superpuesta = Superpuesta.Conexiones
             else -> seccion = Seccion.INICIO
         }
     }

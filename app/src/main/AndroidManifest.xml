@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Internet: solo para hablar con Ollama en tu red y para descargar el modelo Gemma 2. -->
+    <!-- Internet: para Ollama en tu red, para descargar el modelo Gemma 2 y para el servidor de
+         CadaPeso (cuentas conectadas de Mercado Pago y Galicia). -->
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Notificaciones: regla de las 24/48 h, día de cobro y resumen semanal (Android 13+ lo pide). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -32,6 +33,25 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Vuelta desde el navegador después de autorizar Mercado Pago: cadapeso://conexion?… -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="cadapeso" android:host="conexion" />
+            </intent-filter>
         </activity>
+
+        <!-- Lee las notificaciones de las apps de Galicia y Mercado Pago (solo si le das el
+             "Acceso a notificaciones" en los ajustes del sistema). Todo se procesa en el teléfono. -->
+        <service
+            android:name=".integraciones.OyenteNotificaciones"
+            android:exported="true"
+            android:label="@string/oyente_notificaciones"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>

@@ -19,8 +19,12 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.work.testing.WorkManagerTestInitHelper
 import com.gabriel.cadapeso.Contenedor
+import com.gabriel.cadapeso.datos.Perfil
+import com.gabriel.cadapeso.dominio.CanalDeteccion
 import com.gabriel.cadapeso.dominio.MedioPago
+import com.gabriel.cadapeso.dominio.OrigenMovimiento
 import com.gabriel.cadapeso.dominio.TipoMovimiento
+import com.gabriel.cadapeso.dominio.TransaccionExterna
 import com.gabriel.cadapeso.ui.tema.CadaPesoTema
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -32,6 +36,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowLooper
+import java.time.LocalDate
 import java.time.YearMonth
 
 /**
@@ -280,5 +285,47 @@ class RecorridoAppTest {
         clic("Sin IA")
         compose.onNodeWithContentDescription("Volver").performClick()
         esperarTexto("Disponible")
+    }
+
+    @Test
+    fun bandejaDeCuentasConectadas() {
+        // Llegan dos movimientos de las cuentas conectadas (como los que baja la sincronización).
+        runBlocking {
+            contenedor.repo.guardarPerfil(Perfil(nombre = "Gabriel", ingresoMensual = 1_000_000.0, onboardingCompleto = true))
+            contenedor.repo.importarTransacciones(
+                listOf(
+                    TransaccionExterna(
+                        idTransaccion = "MERCADO_PAGO:1", origen = OrigenMovimiento.MERCADO_PAGO, tipo = TipoMovimiento.GASTO,
+                        monto = 3500.0, fecha = LocalDate.now(), descripcion = "Café Martínez", medioPago = MedioPago.BILLETERA,
+                    ),
+                    TransaccionExterna(
+                        idTransaccion = "GALICIA:1234:a", origen = OrigenMovimiento.GALICIA, tipo = TipoMovimiento.GASTO,
+                        monto = 10_000.0, fecha = LocalDate.now(), descripcion = "Transf. a cvu mercadopago",
+                        medioPago = MedioPago.TRANSFERENCIA, transferenciaPropia = true,
+                    ),
+                ),
+                CanalDeteccion.SERVIDOR,
+                aceptarSolas = false,
+            )
+        }
+        iniciar()
+        clic("📥 2 movimientos para revisar")
+        esperarTexto("Para revisar")
+        esperarTexto("Parece plata entre tus cuentas")
+
+        // "Aceptar todos" deja afuera la transferencia propia: esa la decide el usuario.
+        clic("Aceptar todos (1)")
+        esperarDatos { d -> d.movimientos.any { it.descripcion == "Café Martínez" && it.origen == OrigenMovimiento.MERCADO_PAGO } }
+        dejarPasarAvisos()
+        clic("Descartar")
+        esperarTexto("Nada para revisar")
+        assertTrue(runBlocking { contenedor.repo.detectadosPendientesAhora() }.isEmpty())
+        assertEquals(1, runBlocking { contenedor.repo.cargarDatos() }.movimientos.size)
+
+        // La pantalla de cuentas conectadas se abre sin servidor configurado.
+        dejarPasarAvisos()
+        clic("Cuentas")
+        esperarTexto("📲 Avisos del banco en tu teléfono")
+        esperarTexto("Clave de registro")
     }
 }

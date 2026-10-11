@@ -1,12 +1,16 @@
 package com.gabriel.cadapeso.datos
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.gabriel.cadapeso.dominio.CanalDeteccion
 import com.gabriel.cadapeso.dominio.EstadoCompra
+import com.gabriel.cadapeso.dominio.EstadoDetectado
 import com.gabriel.cadapeso.dominio.FrecuenciaAhorro
 import com.gabriel.cadapeso.dominio.GrupoGasto
 import com.gabriel.cadapeso.dominio.MedioPago
+import com.gabriel.cadapeso.dominio.OrigenMovimiento
 import com.gabriel.cadapeso.dominio.ProveedorIA
 import com.gabriel.cadapeso.dominio.ReglaPresupuesto
 import com.gabriel.cadapeso.dominio.TipoActivo
@@ -34,6 +38,44 @@ data class Movimiento(
     /** Si es el pago de una deuda, a cuál (se descuenta del saldo). */
     val deudaId: Long? = null,
     val creadoConIA: Boolean = false,
+    /**
+     * De dónde vino: cargado a mano o importado de una cuenta conectada. La columna se agregó en
+     * la versión 2 de la base; el valor por defecto es para los movimientos que ya existían.
+     */
+    @ColumnInfo(defaultValue = "'MANUAL'")
+    val origen: OrigenMovimiento = OrigenMovimiento.MANUAL,
+)
+
+/**
+ * Movimiento que llegó de una cuenta conectada (Mercado Pago, Galicia) y espera revisión en la
+ * bandeja: el usuario lo acepta (se crea el Movimiento), lo edita o lo descarta. Queda guardado
+ * aunque se descarte, así la misma transacción no vuelve a aparecer.
+ */
+@Entity(tableName = "detectados", indices = [Index(value = ["idExterno"], unique = true), Index("estado")])
+data class MovimientoDetectado(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    /** id_transaccion del esquema unificado ("MERCADO_PAGO:123"). */
+    val idExterno: String,
+    val origen: OrigenMovimiento,
+    val canal: CanalDeteccion,
+    val tipo: TipoMovimiento,
+    val monto: Double,
+    val moneda: String,
+    val fecha: LocalDate,
+    val descripcion: String,
+    /** Categoría sugerida al detectarlo (null = no se pudo adivinar). */
+    val categoriaId: Long?,
+    val medioPago: MedioPago,
+    /** Texto original o datos extra (cuenta, contraparte) para mostrar en la revisión. */
+    val detalle: String,
+    /** Parece plata movida entre cuentas propias: se sugiere descartarlo. */
+    val transferenciaPropia: Boolean,
+    /** Un movimiento cargado a mano que parece ser el mismo (mismo monto, fecha cercana). */
+    val duplicadoDeId: Long?,
+    val estado: EstadoDetectado,
+    /** El movimiento creado al aceptarlo. */
+    val movimientoId: Long?,
+    val detectadoMillis: Long,
 )
 
 @Entity(tableName = "categorias")

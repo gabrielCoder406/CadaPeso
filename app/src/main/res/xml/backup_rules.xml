@@ -3,4 +3,8 @@
 <full-backup-content>
     <include domain="database" path="." />
     <include domain="sharedpref" path="." />
+    <!-- Cuentas conectadas: el token y las claves están cifrados con una clave del Keystore que no
+         existe en otro teléfono; ahí se vuelve a conectar. -->
+    <exclude domain="sharedpref" path="cofre.xml" />
+    <exclude domain="sharedpref" path="integraciones.xml" />
 </full-backup-content>

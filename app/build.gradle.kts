@@ -24,8 +24,8 @@ android {
         applicationId = "com.gabriel.cadapeso"
         minSdk = 26        // Android 8.0: trae java.time (fechas) sin librerías extra
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
 
         // MediaPipe trae el motor de Gemma compilado para 4 arquitecturas (~108 MB).
         // Los teléfonos reales usan ARM; x86 solo sirve para emuladores, así que lo dejamos afuera.
@@ -106,6 +106,8 @@ dependencies {
     // Tests: los del motor corren en la JVM pura; los de pantallas usan Robolectric, que simula
     // Android en la PC (no hace falta emulador ni teléfono).
     testImplementation("junit:junit:4.13.2")
+    // org.json real para los tests en la JVM (el android.jar de los tests solo trae "stubs").
+    testImplementation("org.json:json:20240303")
     testImplementation(composeBom)
     testImplementation("org.robolectric:robolectric:4.16.1")
     testImplementation("androidx.compose.ui:ui-test-junit4")

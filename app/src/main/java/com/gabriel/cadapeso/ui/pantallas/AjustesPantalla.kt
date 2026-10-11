@@ -92,6 +92,7 @@ fun AjustesPantalla(
     asesor: AsesorViewModel,
     onVolver: () -> Unit,
     onTest: (TipoTest) -> Unit,
+    onConexiones: () -> Unit,
 ) {
     Scaffold(
         snackbarHost = { SnackbarHost(LocalAvisos.current) },
@@ -107,6 +108,15 @@ fun AjustesPantalla(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            item {
+                Seccion(
+                    "🔗 Cuentas conectadas",
+                    subtitulo = "Importá tus movimientos de Mercado Pago y Banco Galicia",
+                    onClick = onConexiones,
+                ) {
+                    TextButton(onClick = onConexiones) { Text("Configurar") }
+                }
+            }
             item { SeccionIA(config, vm, asesor, a) }
             item { SeccionPerfil(perfil, vm) }
             item { SeccionTests(perfil, onTest) }
@@ -443,7 +453,7 @@ private fun SeccionDatos(vm: AppViewModel) {
     val importarJson = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uriImportar = uri }
     val hoy = LocalDate.now()
 
-    Seccion("💾 Tus datos", subtitulo = "Todo queda en el teléfono. Hacé un respaldo de vez en cuando.") {
+    Seccion("💾 Tus datos", subtitulo = "Tus datos quedan en el teléfono. Hacé un respaldo de vez en cuando.") {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilledTonalButton(onClick = { exportarJson.launch("cadapeso-respaldo-$hoy.json") }) { Text("Exportar respaldo") }
             OutlinedButton(onClick = { importarJson.launch(arrayOf("application/json", "text/plain", "*/*")) }) { Text("Restaurar respaldo") }
@@ -473,7 +483,7 @@ private fun SeccionDatos(vm: AppViewModel) {
 @Composable
 private fun AcercaDe() {
     Seccion("ℹ️ Acerca de CadaPeso") {
-        Text("Versión 1.0 · Gestión de gastos con asesor financiero basado en Gemma 2 de Google.", style = MaterialTheme.typography.bodySmall)
+        Text("Versión 1.1 · Gestión de gastos con asesor financiero basado en Gemma 2 de Google.", style = MaterialTheme.typography.bodySmall)
         Text(
             "Gemma es un modelo de Google, sujeto a los Términos de uso de Gemma. Corre con MediaPipe LLM Inference (en el teléfono) u Ollama (en tu PC).",
             style = MaterialTheme.typography.bodySmall,

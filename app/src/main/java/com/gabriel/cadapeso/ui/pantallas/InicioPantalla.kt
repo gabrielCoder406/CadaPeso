@@ -67,7 +67,7 @@ import com.gabriel.cadapeso.ui.tema.EstiloMontoGrande
 import java.time.LocalTime
 
 @Composable
-fun InicioPantalla(a: Analisis, nav: Navegacion, onCargarEjemplo: () -> Unit) {
+fun InicioPantalla(a: Analisis, nav: Navegacion, onCargarEjemplo: () -> Unit, pendientes: Int = 0) {
     val nombre = a.datos.perfil.nombre.trim()
     val hora = LocalTime.now().hour
     val saludo = when (hora) {
@@ -112,6 +112,15 @@ fun InicioPantalla(a: Analisis, nav: Navegacion, onCargarEjemplo: () -> Unit) {
         ) {
             if (a.datos.movimientos.isEmpty()) {
                 item { TarjetaBienvenida(onNuevo = { nav.edicion = EdicionMovimiento() }, onCargarEjemplo = onCargarEjemplo) }
+            }
+            if (pendientes > 0) {
+                item {
+                    Seccion(
+                        "📥 ${plural(pendientes, "movimiento para revisar", "movimientos para revisar")}",
+                        subtitulo = "Llegaron de Mercado Pago o Galicia: confirmalos para que cuenten",
+                        onClick = { nav.superpuesta = Superpuesta.Detectados },
+                    ) {}
+                }
             }
             item { TarjetaMes(a, nav) }
             item { TarjetaRegla(a, nav) }

@@ -12,6 +12,8 @@ import androidx.room.TypeConverter
 import androidx.room.TypeConverters
 import androidx.room.Update
 import androidx.room.Upsert
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 import java.time.LocalDate
 
@@ -52,6 +54,9 @@ interface MovimientoDao : DaoBase<Movimiento> {
 
     @Query("SELECT * FROM movimientos WHERE id = :id")
     suspend fun obtener(id: Long): Movimiento?
+
+    @Query("SELECT * FROM movimientos WHERE fecha >= :desde")
+    suspend fun desde(desde: LocalDate): List<Movimiento>
 
     @Query("UPDATE movimientos SET metaId = NULL WHERE metaId = :metaId")
     suspend fun desvincularMeta(metaId: Long)
@@ -119,6 +124,9 @@ interface ActivoDao : DaoBase<Activo> {
     @Query("SELECT * FROM activos")
     suspend fun todos(): List<Activo>
 
+    @Query("SELECT * FROM activos WHERE id = :id")
+    suspend fun obtener(id: Long): Activo?
+
     @Query("DELETE FROM activos")
     suspend fun borrarTodo()
 }
@@ -178,6 +186,32 @@ interface EventoDao : DaoBase<EventoPlanificado> {
 }
 
 @Dao
+interface DetectadoDao : DaoBase<MovimientoDetectado> {
+    @Query("SELECT * FROM detectados WHERE estado = 'PENDIENTE' ORDER BY fecha DESC, id DESC")
+    fun observarPendientes(): Flow<List<MovimientoDetectado>>
+
+    @Query("SELECT * FROM detectados WHERE id = :id")
+    suspend fun obtener(id: Long): MovimientoDetectado?
+
+    @Query("SELECT * FROM detectados WHERE idExterno = :idExterno")
+    suspend fun porIdExterno(idExterno: String): MovimientoDetectado?
+
+    @Query("SELECT * FROM detectados WHERE estado = 'PENDIENTE' ORDER BY fecha DESC, id DESC")
+    suspend fun pendientes(): List<MovimientoDetectado>
+
+    /** Los detectados de los últimos días (para reconocer el mismo movimiento llegado por dos vías). */
+    @Query("SELECT * FROM detectados WHERE fecha >= :desde")
+    suspend fun desde(desde: LocalDate): List<MovimientoDetectado>
+
+    /** Los ya resueltos se guardan un tiempo para no volver a importarlos; después se borran. */
+    @Query("DELETE FROM detectados WHERE estado != 'PENDIENTE' AND detectadoMillis < :antes")
+    suspend fun purgarResueltos(antes: Long)
+
+    @Query("DELETE FROM detectados")
+    suspend fun borrarTodo()
+}
+
+@Dao
 interface ChatDao : DaoBase<MensajeChat> {
     @Query("SELECT * FROM chat ORDER BY fechaMillis, id")
     fun observar(): Flow<List<MensajeChat>>
@@ -208,9 +242,9 @@ interface ConfigIADao : DaoBase<ConfigIA> {
     entities = [
         Movimiento::class, Categoria::class, Asignacion::class, PlanMensual::class, Activo::class,
         Deuda::class, Meta::class, CompraEnEspera::class, EventoPlanificado::class, MensajeChat::class,
-        Perfil::class, ConfigIA::class,
+        Perfil::class, ConfigIA::class, MovimientoDetectado::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 @TypeConverters(Convertidores::class)
@@ -227,9 +261,36 @@ abstract class BaseDatos : RoomDatabase() {
     abstract fun chat(): ChatDao
     abstract fun perfil(): PerfilDao
     abstract fun configIA(): ConfigIADao
+    abstract fun detectados(): DetectadoDao
 
     companion object {
         fun crear(context: Context): BaseDatos =
-            Room.databaseBuilder(context.applicationContext, BaseDatos::class.java, "cadapeso.db").build()
+            Room.databaseBuilder(context.applicationContext, BaseDatos::class.java, "cadapeso.db")
+                .addMigrations(*MIGRACIONES)
+                .build()
+
+        /**
+         * Versión 1 → 2 (cuentas conectadas): los movimientos guardan su origen y se agrega la
+         * bandeja de movimientos detectados. NUNCA usar fallbackToDestructiveMigration: borraría
+         * los datos del usuario. El SQL tiene que coincidir exactamente con lo que Room espera
+         * (lo verifica MigracionTest).
+         */
+        val MIGRACION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `movimientos` ADD COLUMN `origen` TEXT NOT NULL DEFAULT 'MANUAL'")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `detectados` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`idExterno` TEXT NOT NULL, `origen` TEXT NOT NULL, `canal` TEXT NOT NULL, `tipo` TEXT NOT NULL, " +
+                        "`monto` REAL NOT NULL, `moneda` TEXT NOT NULL, `fecha` INTEGER NOT NULL, `descripcion` TEXT NOT NULL, " +
+                        "`categoriaId` INTEGER, `medioPago` TEXT NOT NULL, `detalle` TEXT NOT NULL, " +
+                        "`transferenciaPropia` INTEGER NOT NULL, `duplicadoDeId` INTEGER, `estado` TEXT NOT NULL, " +
+                        "`movimientoId` INTEGER, `detectadoMillis` INTEGER NOT NULL)",
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_detectados_idExterno` ON `detectados` (`idExterno`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_detectados_estado` ON `detectados` (`estado`)")
+            }
+        }
+
+        val MIGRACIONES = arrayOf(MIGRACION_1_2)
     }
 }

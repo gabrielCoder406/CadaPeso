@@ -6,6 +6,8 @@ import com.gabriel.cadapeso.datos.BaseDatos
 import com.gabriel.cadapeso.datos.Repositorio
 import com.gabriel.cadapeso.ia.AsesorIA
 import com.gabriel.cadapeso.ia.GestorModelos
+import com.gabriel.cadapeso.integraciones.GestorIntegraciones
+import com.gabriel.cadapeso.integraciones.SincronizacionWorker
 import com.gabriel.cadapeso.notificaciones.Notificador
 import com.gabriel.cadapeso.notificaciones.RevisionDiariaWorker
 import kotlinx.coroutines.CoroutineScope
@@ -23,6 +25,8 @@ class Contenedor(val app: Application) {
     val repo = Repositorio(db)
     val modelos = GestorModelos(app)
     val asesor = AsesorIA(app)
+    /** Cuentas conectadas: Mercado Pago, Banco Galicia y notificaciones del banco. */
+    val integraciones = GestorIntegraciones(app, repo)
 }
 
 class CadaPesoApp : Application() {
@@ -39,6 +43,7 @@ class CadaPesoApp : Application() {
         Notificador.crearCanales(this)
         alcance.launch { contenedor.repo.inicializar() }
         RevisionDiariaWorker.programar(this)
+        if (contenedor.integraciones.config.value.registrado) SincronizacionWorker.programar(this)
     }
 
     /**
