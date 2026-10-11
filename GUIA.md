@@ -50,8 +50,9 @@ repositorio (GitHub › **Settings › Secrets and variables › Actions › New
 | `FIRMA_ALIAS` | `cadapeso` |
 
 Desde ese momento, cada APK que compila GitHub se instala encima de tu versión. Para generar un
-Release nuevo con tu firma: subí la versión en `app/build.gradle.kts` (`versionName`) y creá la
-etiqueta correspondiente (por ejemplo `v1.1.1`: `git tag v1.1.1 && git push origin v1.1.1`). Cada
+Release nuevo con tu firma: subí la versión en `app/build.gradle.kts` (`versionName`) y, o bien
+ejecutá **Actions › APK › Run workflow** (el botón aparece cuando el workflow está en la rama
+principal), o bien subí la etiqueta desde la PC (`git tag v1.1.1 && git push origin v1.1.1`). Cada
 compilación también deja el APK en **Actions › (la ejecución) › Artifacts**.
 
 **Opción C — Si el APK está firmado con otra clave** (dice "clave de prueba" en el Release, o
