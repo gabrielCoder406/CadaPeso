@@ -27,7 +27,6 @@ import com.gabriel.cadapeso.dominio.TipoMovimiento
 import com.gabriel.cadapeso.dominio.TransaccionExterna
 import com.gabriel.cadapeso.ui.tema.CadaPesoTema
 import kotlinx.coroutines.runBlocking
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -61,10 +60,9 @@ class RecorridoAppTest {
         runBlocking { contenedor.repo.inicializar() }
     }
 
-    @After
-    fun cerrar() {
-        contenedor.db.close()
-    }
+    // La base NO se cierra al terminar cada test: JUnit corre el @After antes de que la regla de
+    // Compose destruya la pantalla, y los ViewModels (que observan la base) podrían estar en medio
+    // de una consulta ("connection pool has been closed"). Cada test arranca con una base nueva.
 
     // ------------------------------------------------------------------ Ayudantes
 
